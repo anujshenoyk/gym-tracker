@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>163 — Cut Program</title>
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#0c0e0d">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="163 Cut">
+</head>
+<body>
+
+<div class="wrap">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">163</span>
+      <span class="brand-name">CUT PROGRAM</span>
+    </div>
+    <div class="progress-chip">
+      <span id="progressCount">0 / 163</span>
+      <div class="progress-track"><div id="progressFill" class="progress-fill"></div></div>
+    </div>
+  </header>
+
+  <main id="mainContent">
+
+    <section class="today-card" id="todayCard">
+      <div class="today-head">
+        <div>
+          <div class="today-label" id="todayLabel">TODAY · DAY 1</div>
+          <h1 class="today-split" id="todaySplit">Back &amp; Biceps</h1>
+          <div class="today-date" id="todayDate">Tuesday, July 21</div>
+        </div>
+        <div class="today-target" id="todayTarget">
+          <span class="target-num" id="targetCals">1000</span>
+          <span class="target-label">kcal target</span>
+        </div>
+      </div>
+
+      <div class="block morning-block">
+        <div class="block-title">
+          <span class="block-icon">☀</span> Morning · 30-30-30
+        </div>
+        <label class="check-row" id="morningRow">
+          <input type="checkbox" id="morningCheck">
+          <span class="check-box"></span>
+          <span class="check-text" id="morningText">30g protein within 30 min of waking · 30 min walk</span>
+        </label>
+      </div>
+
+      <div class="block warmup-block">
+        <div class="block-title"><span class="block-icon">◐</span> Warm-up</div>
+        <div class="warmup-text" id="warmupText">10 min treadmill walk + mobility</div>
+      </div>
+
+      <div class="block exercise-block">
+        <div class="block-title"><span class="block-icon">●</span> Workout</div>
+        <div id="exerciseList" class="exercise-list"></div>
+      </div>
+
+      <div class="block cardio-block">
+        <div class="block-title"><span class="block-icon">◆</span> Cardio Finisher</div>
+        <label class="check-row" id="cardioRow">
+          <input type="checkbox" id="cardioCheck">
+          <span class="check-box"></span>
+          <span class="check-text" id="cardioText">Incline Treadmill / Elliptical / Bike — 300 kcal</span>
+        </label>
+      </div>
+
+      <div class="block stretch-block">
+        <div class="block-title"><span class="block-icon">◍</span> Stretch</div>
+        <label class="check-row" id="stretchRow">
+          <input type="checkbox" id="stretchCheck">
+          <span class="check-box"></span>
+          <span class="check-text" id="stretchText">5 min stretching</span>
+        </label>
+      </div>
+    </section>
+
+    <section class="upcoming-section">
+      <div class="section-title">Up next</div>
+      <div id="upcomingList" class="upcoming-list"></div>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">History <span id="historyCount"></span></div>
+      <div id="historyList" class="history-list"></div>
+    </section>
+
+  </main>
+
+  <footer class="foot">
+    <button id="resetBtn" class="reset-btn">Reset progress</button>
+  </footer>
+
+</div>
+
+<div id="popup" class="popup"></div>
+
+<script src="script.js"></script>
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    });
+  }
+</script>
+</body>
+</html>
