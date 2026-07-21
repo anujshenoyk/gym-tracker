@@ -155,34 +155,50 @@ function renderToday() {
   // Exercises
   const list = document.getElementById('exerciseList');
   list.innerHTML = '';
+  const firstIncompleteIndex = day.gym_session.exercises.findIndex(
+    (ex, i) => t.exercises[i].some(done => !done)
+  );
+
   day.gym_session.exercises.forEach((ex, i) => {
     const wrapper = document.createElement('div');
     wrapper.className = 'exercise-item';
 
     const setsDone = t.exercises[i].filter(Boolean).length;
     const allSetsDone = setsDone === ex.sets;
+    const shouldOpen = firstIncompleteIndex === -1 ? false : i === firstIncompleteIndex;
 
-    const header = document.createElement('div');
-    header.className = 'exercise-header' + (allSetsDone ? ' is-done' : '');
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'exercise-header' + (allSetsDone ? ' is-done' : '') + (shouldOpen ? ' is-open' : '');
     header.id = `ex-header-${i}`;
     header.innerHTML = `
       <span class="ex-name">${ex.exercise}</span>
-      <span class="ex-meta">${ex.reps} reps · ${ex.rest_seconds}s rest/set · <span id="ex-count-${i}">${setsDone}/${ex.sets}</span></span>
+      <span class="ex-meta">${ex.sets} × ${ex.reps} reps · <span id="ex-count-${i}">${setsDone}/${ex.sets}</span></span>
+      <span class="ex-chevron">▾</span>
     `;
+    header.onclick = () => togglePanel(i);
     wrapper.appendChild(header);
 
-    const chipsRow = document.createElement('div');
-    chipsRow.className = 'set-chips';
+    const panel = document.createElement('div');
+    panel.className = 'exercise-panel' + (shouldOpen ? ' is-open' : '');
+    panel.id = `ex-panel-${i}`;
+
+    const setsList = document.createElement('div');
+    setsList.className = 'set-list';
     for (let s = 0; s < ex.sets; s++) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'set-chip' + (t.exercises[i][s] ? ' is-done' : '');
-      chip.textContent = `Set ${s + 1}`;
-      chip.id = `set-chip-${i}-${s}`;
-      chip.onclick = () => onSetToggle(i, s, ex);
-      chipsRow.appendChild(chip);
+      const setRow = document.createElement('button');
+      setRow.type = 'button';
+      setRow.className = 'set-row' + (t.exercises[i][s] ? ' is-done' : '');
+      setRow.id = `set-chip-${i}-${s}`;
+      setRow.innerHTML = `
+        <span class="set-check"></span>
+        <span class="set-label">Set ${s + 1}</span>
+        <span class="set-reps">${ex.reps} reps</span>
+      `;
+      setRow.onclick = () => onSetToggle(i, s, ex);
+      setsList.appendChild(setRow);
     }
-    wrapper.appendChild(chipsRow);
+    panel.appendChild(setsList);
 
     const timerBox = document.createElement('div');
     timerBox.className = 'rest-timer';
@@ -193,8 +209,9 @@ function renderToday() {
       <button type="button" class="rest-skip" id="rest-skip-${i}">skip</button>
     `;
     timerBox.style.display = 'none';
-    wrapper.appendChild(timerBox);
+    panel.appendChild(timerBox);
 
+    wrapper.appendChild(panel);
     list.appendChild(wrapper);
 
     document.getElementById(`rest-skip-${i}`).onclick = () => stopRestTimer(i);
@@ -250,6 +267,15 @@ function onItemTicked(rowId, isChecked) {
   }
 }
 
+function togglePanel(index) {
+  const panel = document.getElementById(`ex-panel-${index}`);
+  const header = document.getElementById(`ex-header-${index}`);
+  if (!panel || !header) return;
+  const nowOpen = !panel.classList.contains('is-open');
+  panel.classList.toggle('is-open', nowOpen);
+  header.classList.toggle('is-open', nowOpen);
+}
+
 function onSetToggle(exerciseIndex, setIndex, ex) {
   const t = getTicks(state.pointer);
   const nowChecked = !t.exercises[exerciseIndex][setIndex];
@@ -272,6 +298,17 @@ function onSetToggle(exerciseIndex, setIndex, ex) {
     startRestTimer(exerciseIndex, ex.rest_seconds);
   } else {
     stopRestTimer(exerciseIndex);
+  }
+
+  if (setsDone === ex.sets) {
+    const day = WORKOUTS[state.pointer];
+    const nextIndex = day.gym_session.exercises.findIndex(
+      (nextEx, i) => t.exercises[i].some(done => !done)
+    );
+    if (nextIndex !== -1 && nextIndex !== exerciseIndex) {
+      togglePanel(exerciseIndex);
+      togglePanel(nextIndex);
+    }
   }
 
   if (isDayFullyTicked(t)) {
