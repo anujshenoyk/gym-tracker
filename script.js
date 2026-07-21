@@ -2,7 +2,7 @@
    163 Cut Program — tracker logic
    ========================================================= */
 
-const STORAGE_KEY = 'cut163_state_v1';
+const STORAGE_KEY = 'cut163_state_v2';
 
 /* ---------------------------------------------------------
    EDIT YOUR OWN MESSAGES HERE.
@@ -19,7 +19,7 @@ const exerciseMessages = [
 ];
 
 const dayCompleteMessages = [
-  "Day complete. One day closer to not being a Fat Fuck."
+  "Day complete. One day closer to not being called a Fat Fuck."
 ];
 
 /* --------------------------------------------------------- */
@@ -37,8 +37,6 @@ async function init() {
 
   state = loadState();
   render();
-
-  document.getElementById('resetBtn').addEventListener('click', onReset);
 }
 
 function loadState() {
@@ -84,7 +82,7 @@ function getTicks(pointer) {
     const day = WORKOUTS[pointer];
     state.ticks[pointer] = {
       morning: false,
-      exercises: day.gym_session.exercises.map(() => false),
+      exercises: day.gym_session.exercises.map(ex => new Array(ex.sets).fill(false)),
       cardio: false,
       stretch: false
     };
@@ -93,7 +91,8 @@ function getTicks(pointer) {
 }
 
 function isDayFullyTicked(t) {
-  return t.morning && t.cardio && t.stretch && t.exercises.every(Boolean);
+  return t.morning && t.cardio && t.stretch &&
+    t.exercises.every(sets => sets.every(Boolean));
 }
 
 /* ---------------- Rendering ---------------- */
@@ -160,15 +159,30 @@ function renderToday() {
     const wrapper = document.createElement('div');
     wrapper.className = 'exercise-item';
 
-    const row = document.createElement('label');
-    row.className = 'check-row exercise-row';
-    row.id = `ex-row-${i}`;
-    row.innerHTML = `
-      <input type="checkbox" id="ex-check-${i}">
-      <span class="check-box"></span>
-      <span class="check-text">${ex.exercise}<span class="ex-meta">${ex.sets} × ${ex.reps} · ${ex.rest_seconds}s rest</span></span>
+    const setsDone = t.exercises[i].filter(Boolean).length;
+    const allSetsDone = setsDone === ex.sets;
+
+    const header = document.createElement('div');
+    header.className = 'exercise-header' + (allSetsDone ? ' is-done' : '');
+    header.id = `ex-header-${i}`;
+    header.innerHTML = `
+      <span class="ex-name">${ex.exercise}</span>
+      <span class="ex-meta">${ex.reps} reps · ${ex.rest_seconds}s rest/set · <span id="ex-count-${i}">${setsDone}/${ex.sets}</span></span>
     `;
-    wrapper.appendChild(row);
+    wrapper.appendChild(header);
+
+    const chipsRow = document.createElement('div');
+    chipsRow.className = 'set-chips';
+    for (let s = 0; s < ex.sets; s++) {
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'set-chip' + (t.exercises[i][s] ? ' is-done' : '');
+      chip.textContent = `Set ${s + 1}`;
+      chip.id = `set-chip-${i}-${s}`;
+      chip.onclick = () => onSetToggle(i, s, ex);
+      chipsRow.appendChild(chip);
+    }
+    wrapper.appendChild(chipsRow);
 
     const timerBox = document.createElement('div');
     timerBox.className = 'rest-timer';
@@ -183,26 +197,20 @@ function renderToday() {
 
     list.appendChild(wrapper);
 
-    const cb = row.querySelector('input');
-    cb.checked = t.exercises[i];
-    if (t.exercises[i]) row.classList.add('is-done');
-    cb.onchange = () => {
-      t.exercises[i] = cb.checked;
-      onItemTicked(`ex-row-${i}`, cb.checked);
-      if (cb.checked) {
-        startRestTimer(i, ex.rest_seconds);
-      } else {
-        stopRestTimer(i);
-      }
-    };
-
     document.getElementById(`rest-skip-${i}`).onclick = () => stopRestTimer(i);
   });
 
   // Cardio
   const cf = day.gym_session.cardio_finisher;
+  const cardioOptionsText = cf.choose_one.map(opt => {
+    const specs = Object.entries(opt)
+      .filter(([k]) => k !== 'machine')
+      .map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`)
+      .join(', ');
+    return `${opt.machine} (${specs})`;
+  }).join(' / ');
   document.getElementById('cardioText').textContent =
-    `${cf.options.join(' / ')} — ${cf.target_calories} kcal`;
+    `${cf.duration_minutes} min — ${cardioOptionsText}`;
   const cardioCheck = document.getElementById('cardioCheck');
   cardioCheck.checked = t.cardio;
   toggleRowDone('cardioRow', t.cardio);
@@ -237,6 +245,35 @@ function onItemTicked(rowId, isChecked) {
   }
 
   const t = getTicks(state.pointer);
+  if (isDayFullyTicked(t)) {
+    completeDay();
+  }
+}
+
+function onSetToggle(exerciseIndex, setIndex, ex) {
+  const t = getTicks(state.pointer);
+  const nowChecked = !t.exercises[exerciseIndex][setIndex];
+  t.exercises[exerciseIndex][setIndex] = nowChecked;
+
+  const chip = document.getElementById(`set-chip-${exerciseIndex}-${setIndex}`);
+  if (chip) chip.classList.toggle('is-done', nowChecked);
+
+  const setsDone = t.exercises[exerciseIndex].filter(Boolean).length;
+  const countEl = document.getElementById(`ex-count-${exerciseIndex}`);
+  if (countEl) countEl.textContent = `${setsDone}/${ex.sets}`;
+
+  const header = document.getElementById(`ex-header-${exerciseIndex}`);
+  if (header) header.classList.toggle('is-done', setsDone === ex.sets);
+
+  saveState();
+
+  if (nowChecked) {
+    queuePopup(pickRandom(exerciseMessages));
+    startRestTimer(exerciseIndex, ex.rest_seconds);
+  } else {
+    stopRestTimer(exerciseIndex);
+  }
+
   if (isDayFullyTicked(t)) {
     completeDay();
   }
@@ -390,16 +427,6 @@ function processPopupQueue() {
       processPopupQueue();
     }, 250);
   }, 1800);
-}
-
-/* ---------------- Reset ---------------- */
-
-function onReset() {
-  if (!confirm('Reset all progress? This cannot be undone.')) return;
-  clearAllRestTimers();
-  localStorage.removeItem(STORAGE_KEY);
-  state = { pointer: 0, history: {}, ticks: {} };
-  render();
 }
 
 init();
