@@ -144,6 +144,38 @@ body{
   text-transform:uppercase;
 }
 
+.day-status{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin-bottom:22px;
+}
+.status-pill{
+  display:flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 12px;
+  background:var(--surface-2);
+  border:1px solid var(--line);
+  border-radius:20px;
+  color:var(--chalk-dim);
+  font-size:12px;
+  font-weight:600;
+  font-family:inherit;
+  cursor:pointer;
+}
+.status-dot{
+  width:8px; height:8px;
+  border-radius:50%;
+  background:var(--iron);
+  flex-shrink:0;
+}
+.status-pill.is-done{
+  border-color:var(--done);
+  color:var(--done);
+}
+.status-pill.is-done .status-dot{ background:var(--done); }
+
 .block{ margin-bottom:22px; }
 .block:last-child{ margin-bottom:0; }
 .block-title{

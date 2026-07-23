@@ -13,13 +13,14 @@ const STORAGE_KEY = 'cut163_state_v2';
    A random one from the matching array is picked each time.
    --------------------------------------------------------- */
 const exerciseMessages = [
-  "Next one, you fat fuck.",
-  "Keep moving you golem.",
-  "Stop being a cow."
+  "Nice. One done.",
+  "Keep moving.",
+  "Logged."
 ];
 
 const dayCompleteMessages = [
-  "Day complete. One day closer to not being called a Fat Fuck."
+  "Day complete. On to the next one.",
+  "That's today handled."
 ];
 
 /* --------------------------------------------------------- */
@@ -137,6 +138,8 @@ function renderToday() {
   document.getElementById('todayDate').textContent = formatLong(date);
   document.getElementById('targetCals').textContent = day.gym_session.target_gym_calories;
 
+  renderDayStatus(day, t);
+
   // Morning routine
   const mr = day.morning_routine;
   document.getElementById('morningText').textContent =
@@ -247,6 +250,33 @@ function renderToday() {
   };
 }
 
+function renderDayStatus(day, t) {
+  const totalExSets = t.exercises.reduce((sum, arr) => sum + arr.length, 0);
+  const doneExSets = t.exercises.reduce((sum, arr) => sum + arr.filter(Boolean).length, 0);
+  const exercisesDone = totalExSets > 0 && doneExSets === totalExSets;
+
+  const items = [
+    { label: 'Morning', done: t.morning, target: 'morningRow' },
+    { label: `Workout ${doneExSets}/${totalExSets}`, done: exercisesDone, target: 'exerciseList' },
+    { label: 'Cardio', done: t.cardio, target: 'cardioRow' },
+    { label: 'Stretch', done: t.stretch, target: 'stretchRow' }
+  ];
+
+  const bar = document.getElementById('dayStatus');
+  bar.innerHTML = items.map(item => `
+    <button type="button" class="status-pill ${item.done ? 'is-done' : ''}" data-target="${item.target}">
+      <span class="status-dot"></span>${item.label}
+    </button>
+  `).join('');
+
+  bar.querySelectorAll('.status-pill').forEach(btn => {
+    btn.onclick = () => {
+      const el = document.getElementById(btn.dataset.target);
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    };
+  });
+}
+
 function toggleRowDone(id, isDone) {
   const row = document.getElementById(id);
   if (!row) return;
@@ -262,6 +292,7 @@ function onItemTicked(rowId, isChecked) {
   }
 
   const t = getTicks(state.pointer);
+  renderDayStatus(WORKOUTS[state.pointer], t);
   if (isDayFullyTicked(t)) {
     completeDay();
   }
@@ -292,6 +323,7 @@ function onSetToggle(exerciseIndex, setIndex, ex) {
   if (header) header.classList.toggle('is-done', setsDone === ex.sets);
 
   saveState();
+  renderDayStatus(WORKOUTS[state.pointer], t);
 
   if (nowChecked) {
     queuePopup(pickRandom(exerciseMessages));
