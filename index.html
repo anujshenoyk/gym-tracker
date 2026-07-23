@@ -30,82 +30,43 @@
 
   <main id="mainContent">
 
-    <section class="today-card" id="todayCard">
-      <div class="today-head">
-        <div>
-          <div class="today-label" id="todayLabel">TODAY · DAY 1</div>
-          <h1 class="today-split" id="todaySplit">Back &amp; Biceps</h1>
-          <div class="today-date" id="todayDate">Tuesday, July 21</div>
-        </div>
-        <div class="today-target" id="todayTarget">
-          <span class="target-num" id="targetCals">1000</span>
-          <span class="target-label">kcal target</span>
-        </div>
+    <section class="calendar-card">
+      <div class="cal-nav">
+        <button type="button" class="cal-nav-btn" id="calPrev">‹</button>
+        <div class="cal-month-label" id="calMonthLabel">July 2026</div>
+        <button type="button" class="cal-nav-btn" id="calNext">›</button>
       </div>
-
-      <div class="day-status" id="dayStatus"></div>
-
-      <div class="block morning-block">
-        <div class="block-title">
-          <span class="block-icon">☀</span> Morning · 30-30-30
-        </div>
-        <label class="check-row" id="morningRow">
-          <input type="checkbox" id="morningCheck">
-          <span class="check-box"></span>
-          <span class="check-text" id="morningText">30g protein within 30 min of waking · 30 min walk</span>
-        </label>
+      <div class="cal-weekdays">
+        <span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span>
       </div>
-
-      <div class="block warmup-block">
-        <div class="block-title"><span class="block-icon">◐</span> Warm-up</div>
-        <div class="warmup-text" id="warmupText">10 min treadmill walk + mobility</div>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-legend">
+        <span class="legend-item"><span class="legend-dot dot-done"></span>Done</span>
+        <span class="legend-item"><span class="legend-dot dot-today"></span>Today</span>
+        <span class="legend-item"><span class="legend-dot dot-missed"></span>Missed</span>
       </div>
-
-      <div class="block exercise-block">
-        <div class="block-title"><span class="block-icon">●</span> Workout</div>
-        <div id="exerciseList" class="exercise-list"></div>
-      </div>
-
-      <div class="block cardio-block">
-        <div class="block-title"><span class="block-icon">◆</span> Cardio Finisher</div>
-        <label class="check-row" id="cardioRow">
-          <input type="checkbox" id="cardioCheck">
-          <span class="check-box"></span>
-          <span class="check-text" id="cardioText">Incline Treadmill / Elliptical / Bike — 300 kcal</span>
-        </label>
-      </div>
-
-      <div class="block stretch-block">
-        <div class="block-title"><span class="block-icon">◍</span> Stretch</div>
-        <label class="check-row" id="stretchRow">
-          <input type="checkbox" id="stretchCheck">
-          <span class="check-box"></span>
-          <span class="check-text" id="stretchText">5 min stretching</span>
-        </label>
-      </div>
-
-      <button type="button" class="force-complete-btn" id="forceCompleteBtn">
-        Mark today complete
-      </button>
     </section>
 
-    <section class="upcoming-section">
-      <div class="section-title">Up next</div>
-      <div id="upcomingList" class="upcoming-list"></div>
+    <section class="detail-card" id="detailCard">
+      <!-- filled dynamically -->
     </section>
 
-    <section class="history-section">
-      <div class="section-title">History <span id="historyCount"></span></div>
-      <div id="historyList" class="history-list"></div>
+    <section class="foot-section">
+      <button type="button" class="backup-toggle" id="backupToggle">Backup / restore progress</button>
+      <div class="backup-panel" id="backupPanel" style="display:none;">
+        <p class="backup-note">Copy this text somewhere safe (Notes app, WhatsApp to yourself, etc). If your phone ever wipes the app's data, paste it back here to restore.</p>
+        <textarea id="backupText" class="backup-textarea" rows="4"></textarea>
+        <div class="backup-actions">
+          <button type="button" id="backupCopyBtn" class="backup-btn">Copy backup</button>
+          <button type="button" id="backupRestoreBtn" class="backup-btn">Restore from text above</button>
+        </div>
+        <div class="backup-status" id="backupStatus"></div>
+      </div>
     </section>
 
   </main>
 
-  <footer class="foot"></footer>
-
 </div>
-
-<div id="popup" class="popup"></div>
 
 <script src="script.js"></script>
 <script>

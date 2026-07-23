@@ -1,35 +1,13 @@
 /* =========================================================
-   163 Cut Program — tracker logic
+   163 Cut Program — calendar tracker logic
    ========================================================= */
 
-const STORAGE_KEY = 'cut163_state_v2';
-
-/* ---------------------------------------------------------
-   EDIT YOUR OWN MESSAGES HERE.
-   - exerciseMessages: shown after ticking ANY single item
-     (morning routine, one exercise, cardio, or stretch)
-   - dayCompleteMessages: shown once the whole day's card
-     is fully ticked off
-   A random one from the matching array is picked each time.
-   --------------------------------------------------------- */
-const exerciseMessages = [
-  "Nice. One done.",
-  "Keep moving.",
-  "Logged."
-];
-
-const dayCompleteMessages = [
-  "Day complete. On to the next one.",
-  "That's today handled."
-];
-
-/* --------------------------------------------------------- */
+const STORAGE_KEY = 'cut163_state_v3';
 
 let WORKOUTS = [];
 let state = null;
-let popupQueue = [];
-let popupBusy = false;
-const restTimers = {}; // { [exerciseIndex]: { intervalId, endTime, total } }
+let viewYear, viewMonth; // month currently shown in calendar (0-indexed month)
+let selectedISO = null;
 
 async function init() {
   const res = await fetch('workouts.json');
@@ -37,20 +15,19 @@ async function init() {
   WORKOUTS = data.workouts;
 
   state = loadState();
-  render();
 
-  document.getElementById('forceCompleteBtn').addEventListener('click', onForceComplete);
-}
+  const today = new Date();
+  viewYear = today.getFullYear();
+  viewMonth = today.getMonth();
+  selectedISO = isoFromDate(today);
 
-function onForceComplete() {
-  if (!confirm("Mark today's full workout as complete? Use this if you've genuinely finished everything and the checkboxes aren't cooperating.")) return;
-  const t = getTicks(state.pointer);
-  t.morning = true;
-  t.cardio = true;
-  t.stretch = true;
-  t.exercises = t.exercises.map(arr => arr.map(() => true));
-  saveState();
-  completeDay();
+  renderAll();
+
+  document.getElementById('calPrev').addEventListener('click', () => shiftMonth(-1));
+  document.getElementById('calNext').addEventListener('click', () => shiftMonth(1));
+  document.getElementById('backupToggle').addEventListener('click', onBackupToggle);
+  document.getElementById('backupCopyBtn').addEventListener('click', onBackupCopy);
+  document.getElementById('backupRestoreBtn').addEventListener('click', onBackupRestore);
 }
 
 function loadState() {
@@ -58,17 +35,14 @@ function loadState() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
   } catch (e) {}
-  return { pointer: 0, history: {}, ticks: {} };
+  return { pointer: 0, history: {} };
 }
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function todayISO() {
-  const d = new Date();
-  return isoFromDate(d);
-}
+/* ---------------- Date helpers ---------------- */
 
 function isoFromDate(d) {
   const y = d.getFullYear();
@@ -77,438 +51,288 @@ function isoFromDate(d) {
   return `${y}-${m}-${day}`;
 }
 
-function addDays(baseDate, n) {
-  const d = new Date(baseDate);
+function dateOnly(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function todayDateOnly() {
+  return dateOnly(new Date());
+}
+
+function daysBetween(a, b) {
+  return Math.round((dateOnly(a) - dateOnly(b)) / 86400000);
+}
+
+function addDays(base, n) {
+  const d = new Date(base);
   d.setDate(d.getDate() + n);
   return d;
 }
 
 function formatLong(d) {
-  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
 }
 
-function formatShort(d) {
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-}
+/* ---------------- Day status resolution ---------------- */
 
-function getTicks(pointer) {
-  if (!state.ticks[pointer]) {
-    const day = WORKOUTS[pointer];
-    state.ticks[pointer] = {
-      morning: false,
-      exercises: day.gym_session.exercises.map(ex => new Array(ex.sets).fill(false)),
-      cardio: false,
-      stretch: false
-    };
+// Returns { status: 'done'|'today'|'missed'|'future'|'beyond', workoutIndex, entry }
+function resolveDateStatus(dateObj) {
+  const iso = isoFromDate(dateObj);
+
+  const historyEntry = Object.entries(state.history).find(([, e]) => e.completedDate === iso);
+  if (historyEntry) {
+    return { status: 'done', workoutIndex: Number(historyEntry[0]), entry: historyEntry[1] };
   }
-  return state.ticks[pointer];
-}
 
-function isDayFullyTicked(t) {
-  return t.morning && t.cardio && t.stretch &&
-    t.exercises.every(sets => sets.every(Boolean));
+  const diff = daysBetween(dateObj, todayDateOnly());
+  if (diff < 0) {
+    return { status: 'missed', workoutIndex: null, entry: null };
+  }
+
+  const workoutIndex = state.pointer + diff;
+  if (workoutIndex >= WORKOUTS.length) {
+    return { status: 'beyond', workoutIndex: null, entry: null };
+  }
+  return { status: diff === 0 ? 'today' : 'future', workoutIndex, entry: null };
 }
 
 /* ---------------- Rendering ---------------- */
 
-function render() {
+function renderAll() {
+  renderProgress();
+  renderCalendar();
+  renderDetail();
+}
+
+function renderProgress() {
   const total = WORKOUTS.length;
   const done = Object.keys(state.history).length;
-
   document.getElementById('progressCount').textContent = `${done} / ${total}`;
   document.getElementById('progressFill').style.width = `${(done / total) * 100}%`;
+}
 
-  if (state.pointer >= total) {
-    renderFinished();
+function shiftMonth(delta) {
+  viewMonth += delta;
+  if (viewMonth < 0) { viewMonth = 11; viewYear--; }
+  if (viewMonth > 11) { viewMonth = 0; viewYear++; }
+  renderCalendar();
+}
+
+function renderCalendar() {
+  const label = new Date(viewYear, viewMonth, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  document.getElementById('calMonthLabel').textContent = label;
+
+  const grid = document.getElementById('calGrid');
+  grid.innerHTML = '';
+
+  const firstDay = new Date(viewYear, viewMonth, 1);
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const leadingBlanks = firstDay.getDay();
+
+  for (let i = 0; i < leadingBlanks; i++) {
+    const blank = document.createElement('div');
+    blank.className = 'cal-cell is-blank';
+    grid.appendChild(blank);
+  }
+
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+    const dateObj = new Date(viewYear, viewMonth, dayNum);
+    const iso = isoFromDate(dateObj);
+    const { status } = resolveDateStatus(dateObj);
+
+    const cell = document.createElement('button');
+    cell.type = 'button';
+    cell.textContent = dayNum;
+    cell.className = 'cal-cell is-' + status;
+    if (iso === selectedISO) cell.classList.add('is-selected');
+    cell.onclick = () => {
+      selectedISO = iso;
+      renderCalendar();
+      renderDetail();
+    };
+    grid.appendChild(cell);
+  }
+}
+
+function renderDetail() {
+  const container = document.getElementById('detailCard');
+  if (!selectedISO) { container.innerHTML = ''; return; }
+
+  const [y, m, d] = selectedISO.split('-').map(Number);
+  const dateObj = new Date(y, m - 1, d);
+  const { status, workoutIndex, entry } = resolveDateStatus(dateObj);
+
+  if (status === 'missed') {
+    container.innerHTML = `
+      <div class="detail-head">
+        <div class="detail-date">${formatLong(dateObj)}</div>
+        <h2 class="detail-split">No workout logged</h2>
+        <span class="detail-badge badge-missed">Missed</span>
+      </div>
+      <p class="detail-text">This day wasn't marked complete. Its workout hasn't disappeared — it's just still waiting, attached to today's date instead.</p>
+      <button type="button" class="jump-btn" id="jumpTodayBtn">Go to today</button>
+    `;
+    document.getElementById('jumpTodayBtn').onclick = jumpToToday;
     return;
   }
 
-  renderToday();
-  renderUpcoming();
-  renderHistory();
-}
+  if (status === 'beyond') {
+    container.innerHTML = `
+      <div class="detail-head">
+        <div class="detail-date">${formatLong(dateObj)}</div>
+        <h2 class="detail-split">Program complete by this date</h2>
+      </div>
+      <p class="detail-text">All 163 days will already be finished before this date, at your current pace.</p>
+    `;
+    return;
+  }
 
-function renderFinished() {
-  const main = document.getElementById('mainContent');
-  main.innerHTML = `
-    <div class="finished-banner">
-      <h1>All 163 days done.</h1>
-      <p style="color:var(--chalk-dim); margin-top:10px;">Program complete. Reset below if you want to run it again.</p>
-    </div>
-  `;
-}
-
-function renderToday() {
-  clearAllRestTimers();
-
-  const pointer = state.pointer;
-  const day = WORKOUTS[pointer];
-  const t = getTicks(pointer);
-  const date = new Date();
-
-  document.getElementById('todayLabel').textContent = `TODAY · DAY ${day.day}`;
-  document.getElementById('todaySplit').textContent = day.gym_session.split;
-  document.getElementById('todayDate').textContent = formatLong(date);
-  document.getElementById('targetCals').textContent = day.gym_session.target_gym_calories;
-
-  renderDayStatus(day, t);
-
-  // Morning routine
+  const day = WORKOUTS[workoutIndex];
+  const gs = day.gym_session;
   const mr = day.morning_routine;
-  document.getElementById('morningText').textContent =
-    `${mr.protein_g}g protein within ${mr.within_minutes_of_waking} min of waking · ${mr.walking_minutes} min walk (${mr.walking_target_calories} kcal)`;
-  const morningCheck = document.getElementById('morningCheck');
-  morningCheck.checked = t.morning;
-  toggleRowDone('morningRow', t.morning);
-  morningCheck.onchange = () => {
-    t.morning = morningCheck.checked;
-    onItemTicked('morningRow', t.morning);
-  };
 
-  // Warmup
-  document.getElementById('warmupText').textContent = day.gym_session.warmup;
+  let badgeHtml = '';
+  if (status === 'done') badgeHtml = `<span class="detail-badge badge-done">Completed</span>`;
+  else if (status === 'future') badgeHtml = `<span class="detail-badge badge-future">Upcoming</span>`;
 
-  // Exercises
-  const list = document.getElementById('exerciseList');
-  list.innerHTML = '';
-  const firstIncompleteIndex = day.gym_session.exercises.findIndex(
-    (ex, i) => t.exercises[i].some(done => !done)
-  );
-
-  day.gym_session.exercises.forEach((ex, i) => {
-    const wrapper = document.createElement('div');
-    wrapper.className = 'exercise-item';
-
-    const setsDone = t.exercises[i].filter(Boolean).length;
-    const allSetsDone = setsDone === ex.sets;
-    const shouldOpen = firstIncompleteIndex === -1 ? false : i === firstIncompleteIndex;
-
-    const header = document.createElement('button');
-    header.type = 'button';
-    header.className = 'exercise-header' + (allSetsDone ? ' is-done' : '') + (shouldOpen ? ' is-open' : '');
-    header.id = `ex-header-${i}`;
-    header.innerHTML = `
-      <span class="ex-name">${ex.exercise}</span>
-      <span class="ex-meta">${ex.sets} × ${ex.reps} reps · <span id="ex-count-${i}">${setsDone}/${ex.sets}</span></span>
-      <span class="ex-chevron">▾</span>
-    `;
-    header.onclick = () => togglePanel(i);
-    wrapper.appendChild(header);
-
-    const panel = document.createElement('div');
-    panel.className = 'exercise-panel' + (shouldOpen ? ' is-open' : '');
-    panel.id = `ex-panel-${i}`;
-
-    const setsList = document.createElement('div');
-    setsList.className = 'set-list';
-    for (let s = 0; s < ex.sets; s++) {
-      const setRow = document.createElement('button');
-      setRow.type = 'button';
-      setRow.className = 'set-row' + (t.exercises[i][s] ? ' is-done' : '');
-      setRow.id = `set-chip-${i}-${s}`;
-      setRow.innerHTML = `
-        <span class="set-check"></span>
-        <span class="set-label">Set ${s + 1}</span>
-        <span class="set-reps">${ex.reps} reps</span>
-      `;
-      setRow.onclick = () => onSetToggle(i, s, ex);
-      setsList.appendChild(setRow);
-    }
-    panel.appendChild(setsList);
-
-    const timerBox = document.createElement('div');
-    timerBox.className = 'rest-timer';
-    timerBox.id = `rest-timer-${i}`;
-    timerBox.innerHTML = `
-      <div class="rest-timer-bar"><div class="rest-timer-fill" id="rest-fill-${i}"></div></div>
-      <span class="rest-timer-text" id="rest-text-${i}"></span>
-      <button type="button" class="rest-skip" id="rest-skip-${i}">skip</button>
-    `;
-    timerBox.style.display = 'none';
-    panel.appendChild(timerBox);
-
-    wrapper.appendChild(panel);
-    list.appendChild(wrapper);
-
-    document.getElementById(`rest-skip-${i}`).onclick = () => stopRestTimer(i);
-  });
-
-  // Cardio
-  const cf = day.gym_session.cardio_finisher;
-  const cardioOptionsText = cf.choose_one.map(opt => {
+  const cardioText = gs.cardio_finisher.choose_one.map(opt => {
     const specs = Object.entries(opt)
       .filter(([k]) => k !== 'machine')
       .map(([k, v]) => `${k.replace(/_/g, ' ')} ${v}`)
       .join(', ');
     return `${opt.machine} (${specs})`;
   }).join(' / ');
-  document.getElementById('cardioText').textContent =
-    `${cf.duration_minutes} min — ${cardioOptionsText}`;
-  const cardioCheck = document.getElementById('cardioCheck');
-  cardioCheck.checked = t.cardio;
-  toggleRowDone('cardioRow', t.cardio);
-  cardioCheck.onchange = () => {
-    t.cardio = cardioCheck.checked;
-    onItemTicked('cardioRow', t.cardio);
-  };
 
-  // Stretch
-  document.getElementById('stretchText').textContent = `${day.gym_session.stretching_minutes} min stretching`;
-  const stretchCheck = document.getElementById('stretchCheck');
-  stretchCheck.checked = t.stretch;
-  toggleRowDone('stretchRow', t.stretch);
-  stretchCheck.onchange = () => {
-    t.stretch = stretchCheck.checked;
-    onItemTicked('stretchRow', t.stretch);
-  };
-}
+  container.innerHTML = `
+    <div class="detail-head">
+      <div class="detail-date">${formatLong(dateObj)} · DAY ${day.day}</div>
+      <h2 class="detail-split">${gs.split}</h2>
+      ${badgeHtml}
+    </div>
 
-function renderDayStatus(day, t) {
-  const totalExSets = t.exercises.reduce((sum, arr) => sum + arr.length, 0);
-  const doneExSets = t.exercises.reduce((sum, arr) => sum + arr.filter(Boolean).length, 0);
-  const exercisesDone = totalExSets > 0 && doneExSets === totalExSets;
+    <div class="detail-block">
+      <div class="detail-block-title">Morning · 30-30-30</div>
+      <div class="detail-text">${mr.protein_g}g protein within ${mr.within_minutes_of_waking} min of waking · ${mr.walking_minutes} min walk (${mr.walking_target_calories} kcal)</div>
+    </div>
 
-  const items = [
-    { label: 'Morning', done: t.morning, target: 'morningRow' },
-    { label: `Workout ${doneExSets}/${totalExSets}`, done: exercisesDone, target: 'exerciseList' },
-    { label: 'Cardio', done: t.cardio, target: 'cardioRow' },
-    { label: 'Stretch', done: t.stretch, target: 'stretchRow' }
-  ];
+    <div class="detail-block">
+      <div class="detail-block-title">Warm-up</div>
+      <div class="detail-text">${gs.warmup}</div>
+    </div>
 
-  const bar = document.getElementById('dayStatus');
-  bar.innerHTML = items.map(item => `
-    <button type="button" class="status-pill ${item.done ? 'is-done' : ''}" data-target="${item.target}">
-      <span class="status-dot"></span>${item.label}
-    </button>
-  `).join('');
+    <div class="detail-block">
+      <div class="detail-block-title">Workout · ${gs.target_gym_calories} kcal target</div>
+      ${gs.exercises.map(ex => `
+        <div class="detail-exercise-row">
+          <span class="ex-name">${ex.exercise}</span>
+          <span class="ex-detail">${ex.sets} × ${ex.reps} · ${ex.rest_seconds}s rest</span>
+        </div>
+      `).join('')}
+    </div>
 
-  bar.querySelectorAll('.status-pill').forEach(btn => {
-    btn.onclick = () => {
-      const el = document.getElementById(btn.dataset.target);
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    };
-  });
-}
+    <div class="detail-block">
+      <div class="detail-block-title">Cardio Finisher</div>
+      <div class="detail-text">${gs.cardio_finisher.duration_minutes} min — ${cardioText}</div>
+    </div>
 
-function toggleRowDone(id, isDone) {
-  const row = document.getElementById(id);
-  if (!row) return;
-  row.classList.toggle('is-done', isDone);
-}
+    <div class="detail-block">
+      <div class="detail-block-title">Stretch</div>
+      <div class="detail-text">${gs.stretching_minutes} min stretching</div>
+    </div>
 
-function onItemTicked(rowId, isChecked) {
-  toggleRowDone(rowId, isChecked);
-  saveState();
+    ${status === 'today' ? `<button type="button" class="complete-btn" id="completeBtn">Mark day complete</button>` : ''}
+  `;
 
-  if (isChecked) {
-    queuePopup(pickRandom(exerciseMessages));
-  }
-
-  const t = getTicks(state.pointer);
-  renderDayStatus(WORKOUTS[state.pointer], t);
-  if (isDayFullyTicked(t)) {
-    completeDay();
+  if (status === 'today') {
+    document.getElementById('completeBtn').addEventListener('click', onCompleteToday);
   }
 }
 
-function togglePanel(index) {
-  const panel = document.getElementById(`ex-panel-${index}`);
-  const header = document.getElementById(`ex-header-${index}`);
-  if (!panel || !header) return;
-  const nowOpen = !panel.classList.contains('is-open');
-  panel.classList.toggle('is-open', nowOpen);
-  header.classList.toggle('is-open', nowOpen);
+function jumpToToday() {
+  const today = new Date();
+  viewYear = today.getFullYear();
+  viewMonth = today.getMonth();
+  selectedISO = isoFromDate(today);
+  renderCalendar();
+  renderDetail();
 }
 
-function onSetToggle(exerciseIndex, setIndex, ex) {
-  const t = getTicks(state.pointer);
-  const nowChecked = !t.exercises[exerciseIndex][setIndex];
-  t.exercises[exerciseIndex][setIndex] = nowChecked;
-
-  const chip = document.getElementById(`set-chip-${exerciseIndex}-${setIndex}`);
-  if (chip) chip.classList.toggle('is-done', nowChecked);
-
-  const setsDone = t.exercises[exerciseIndex].filter(Boolean).length;
-  const countEl = document.getElementById(`ex-count-${exerciseIndex}`);
-  if (countEl) countEl.textContent = `${setsDone}/${ex.sets}`;
-
-  const header = document.getElementById(`ex-header-${exerciseIndex}`);
-  if (header) header.classList.toggle('is-done', setsDone === ex.sets);
-
-  saveState();
-  renderDayStatus(WORKOUTS[state.pointer], t);
-
-  if (nowChecked) {
-    queuePopup(pickRandom(exerciseMessages));
-    startRestTimer(exerciseIndex, ex.rest_seconds);
-  } else {
-    stopRestTimer(exerciseIndex);
+function onCompleteToday(e) {
+  const btn = e.currentTarget;
+  if (!btn.classList.contains('armed')) {
+    btn.classList.add('armed');
+    btn.textContent = 'Tap again to confirm';
+    clearTimeout(btn._armTimeout);
+    btn._armTimeout = setTimeout(() => {
+      if (btn) {
+        btn.classList.remove('armed');
+        btn.textContent = 'Mark day complete';
+      }
+    }, 3000);
+    return;
   }
 
-  if (setsDone === ex.sets) {
-    const day = WORKOUTS[state.pointer];
-    const nextIndex = day.gym_session.exercises.findIndex(
-      (nextEx, i) => t.exercises[i].some(done => !done)
-    );
-    if (nextIndex !== -1 && nextIndex !== exerciseIndex) {
-      togglePanel(exerciseIndex);
-      togglePanel(nextIndex);
-    }
-  }
-
-  if (isDayFullyTicked(t)) {
-    completeDay();
-  }
-}
-
-/* ---------------- Rest timers ---------------- */
-
-function formatSeconds(s) {
-  const m = Math.floor(s / 60);
-  const sec = s % 60;
-  return `${m}:${String(sec).padStart(2, '0')}`;
-}
-
-function startRestTimer(index, totalSeconds) {
-  stopRestTimer(index); // clear any existing one for this row first
-
-  const box = document.getElementById(`rest-timer-${index}`);
-  const fill = document.getElementById(`rest-fill-${index}`);
-  const text = document.getElementById(`rest-text-${index}`);
-  if (!box) return;
-
-  box.style.display = 'flex';
-  box.classList.remove('rest-done');
-  const endTime = Date.now() + totalSeconds * 1000;
-
-  const tick = () => {
-    const remaining = Math.max(0, Math.round((endTime - Date.now()) / 1000));
-    text.textContent = formatSeconds(remaining);
-    fill.style.width = `${((totalSeconds - remaining) / totalSeconds) * 100}%`;
-
-    if (remaining <= 0) {
-      clearInterval(restTimers[index].intervalId);
-      delete restTimers[index];
-      text.textContent = 'Rest done';
-      box.classList.add('rest-done');
-      setTimeout(() => {
-        if (box) box.style.display = 'none';
-      }, 4000);
-    }
-  };
-
-  const intervalId = setInterval(tick, 250);
-  restTimers[index] = { intervalId, endTime, total: totalSeconds };
-  tick();
-}
-
-function stopRestTimer(index) {
-  if (restTimers[index]) {
-    clearInterval(restTimers[index].intervalId);
-    delete restTimers[index];
-  }
-  const box = document.getElementById(`rest-timer-${index}`);
-  if (box) box.style.display = 'none';
-}
-
-function clearAllRestTimers() {
-  Object.keys(restTimers).forEach(i => clearInterval(restTimers[i].intervalId));
-  for (const k in restTimers) delete restTimers[k];
-}
-
-function completeDay() {
-  clearAllRestTimers();
   const pointer = state.pointer;
   const day = WORKOUTS[pointer];
+  const todayISO = isoFromDate(new Date());
 
   state.history[pointer] = {
     day: day.day,
     split: day.gym_session.split,
-    completedDate: todayISO()
+    completedDate: todayISO
   };
-  delete state.ticks[pointer];
   state.pointer = pointer + 1;
   saveState();
 
-  queuePopup(pickRandom(dayCompleteMessages));
-  setTimeout(render, 350);
+  renderAll();
 }
 
-function renderUpcoming() {
-  const container = document.getElementById('upcomingList');
-  container.innerHTML = '';
-  const start = state.pointer + 1;
-  const end = Math.min(start + 5, WORKOUTS.length);
+/* ---------------- Backup / restore ---------------- */
 
-  if (start >= WORKOUTS.length) {
-    container.innerHTML = `<div class="history-empty">Nothing left — this is the last day.</div>`;
-    return;
-  }
-
-  for (let i = start; i < end; i++) {
-    const day = WORKOUTS[i];
-    const offset = i - state.pointer;
-    const projected = addDays(new Date(), offset);
-    const row = document.createElement('div');
-    row.className = 'upcoming-row';
-    row.innerHTML = `<span>Day ${day.day} · ${day.gym_session.split}</span><span class="up-date">${formatShort(projected)}</span>`;
-    container.appendChild(row);
+function onBackupToggle() {
+  const panel = document.getElementById('backupPanel');
+  const isOpen = panel.style.display !== 'none';
+  panel.style.display = isOpen ? 'none' : 'block';
+  if (!isOpen) {
+    document.getElementById('backupText').value = JSON.stringify(state);
+    document.getElementById('backupStatus').textContent = '';
   }
 }
 
-function renderHistory() {
-  const container = document.getElementById('historyList');
-  const countEl = document.getElementById('historyCount');
-  const entries = Object.values(state.history).sort((a, b) => a.day - b.day);
-
-  countEl.textContent = entries.length ? `(${entries.length})` : '';
-
-  if (!entries.length) {
-    container.innerHTML = `<div class="history-empty">Nothing logged yet.</div>`;
-    return;
+function onBackupCopy() {
+  const textarea = document.getElementById('backupText');
+  textarea.value = JSON.stringify(state);
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+  let copied = false;
+  try {
+    copied = document.execCommand('copy');
+  } catch (e) {}
+  const status = document.getElementById('backupStatus');
+  if (!copied && navigator.clipboard) {
+    navigator.clipboard.writeText(textarea.value)
+      .then(() => { status.textContent = 'Copied.'; })
+      .catch(() => { status.textContent = 'Could not auto-copy — select the text above manually and copy it.'; });
+  } else {
+    status.textContent = copied ? 'Copied.' : 'Select the text above manually and copy it.';
   }
-
-  container.innerHTML = '';
-  entries.slice().reverse().forEach(e => {
-    const d = new Date(e.completedDate + 'T00:00:00');
-    const row = document.createElement('div');
-    row.className = 'history-row';
-    row.innerHTML = `
-      <span class="h-day">Day ${e.day}</span>
-      <span class="h-split">${e.split}</span>
-      <span class="h-date">${formatShort(d)}</span>
-    `;
-    container.appendChild(row);
-  });
 }
 
-/* ---------------- Popups ---------------- */
-
-function pickRandom(arr) {
-  if (!arr || !arr.length) return '';
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function queuePopup(text) {
-  if (!text) return;
-  popupQueue.push(text);
-  processPopupQueue();
-}
-
-function processPopupQueue() {
-  if (popupBusy || !popupQueue.length) return;
-  popupBusy = true;
-  const text = popupQueue.shift();
-  const el = document.getElementById('popup');
-  el.textContent = text;
-  el.classList.add('show');
-  setTimeout(() => {
-    el.classList.remove('show');
-    setTimeout(() => {
-      popupBusy = false;
-      processPopupQueue();
-    }, 250);
-  }, 1800);
+function onBackupRestore() {
+  const textarea = document.getElementById('backupText');
+  const status = document.getElementById('backupStatus');
+  try {
+    const parsed = JSON.parse(textarea.value);
+    if (typeof parsed.pointer !== 'number' || !parsed.history) {
+      throw new Error('bad shape');
+    }
+    state = parsed;
+    saveState();
+    renderAll();
+    status.textContent = 'Restored.';
+  } catch (e) {
+    status.textContent = "That doesn't look like a valid backup — check you pasted the whole thing.";
+  }
 }
 
 init();
