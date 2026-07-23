@@ -385,6 +385,25 @@ body{
 .rest-skip:hover{ border-color:var(--accent); color:var(--accent); }
 
 /* Upcoming */
+.force-complete-btn{
+  width:100%;
+  margin-top:24px;
+  padding:14px;
+  background:transparent;
+  border:1px solid var(--line);
+  color:var(--chalk-dim);
+  font-family:'Oswald',sans-serif;
+  font-size:13px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  border-radius:8px;
+  cursor:pointer;
+}
+.force-complete-btn:hover{
+  border-color:var(--accent);
+  color:var(--accent);
+}
+
 .section-title{
   font-family:'Oswald',sans-serif;
   font-size:13px;

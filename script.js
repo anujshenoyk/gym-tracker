@@ -38,6 +38,19 @@ async function init() {
 
   state = loadState();
   render();
+
+  document.getElementById('forceCompleteBtn').addEventListener('click', onForceComplete);
+}
+
+function onForceComplete() {
+  if (!confirm("Mark today's full workout as complete? Use this if you've genuinely finished everything and the checkboxes aren't cooperating.")) return;
+  const t = getTicks(state.pointer);
+  t.morning = true;
+  t.cardio = true;
+  t.stretch = true;
+  t.exercises = t.exercises.map(arr => arr.map(() => true));
+  saveState();
+  completeDay();
 }
 
 function loadState() {
